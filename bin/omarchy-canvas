@@ -1,0 +1,68 @@
+#!/bin/bash
+# omarchy:summary=Infinite visual canvas for Omarchy
+# omarchy:args=[open|new|list|rename|remove] [name]
+# omarchy:examples=omarchy canvas open|omarchy canvas new "Roadmap"|omarchy canvas list
+#
+# Thin CLI over the canvas service. The service owns the project index; this
+# script just speaks IPC to it. `open` summons the panel window.
+
+set -euo pipefail
+
+PLUGIN_ID="io.github.hermes.canvas"
+
+cmd="${1:-open}"
+shift || true
+
+case "$cmd" in
+  open|o)
+    doc="${1:-default}"
+    exec omarchy-shell shell summon "$PLUGIN_ID" "$(printf '{"doc":"%s"}' "${doc//\"/}")"
+    ;;
+  new|n|create)
+    name="${1:-}"
+    result=$(omarchy-shell canvas create "${name:-}")
+    id=$(printf '%s' "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+    if [[ -z $id ]]; then
+      echo "canvas: could not create project" >&2
+      exit 1
+    fi
+    echo "Created canvas: $id"
+    exec omarchy-shell shell summon "$PLUGIN_ID" "$(printf '{"doc":"%s"}' "$id")"
+    ;;
+  list|ls)
+    omarchy-shell canvas list | python3 -c "
+import sys, json, datetime
+d = json.load(sys.stdin)
+print('%-28s %-22s %s' % ('ID', 'NAME', 'MODIFIED'))
+for p in sorted(d.get('projects', []), key=lambda x: x.get('modified', 0), reverse=True):
+    ts = datetime.datetime.fromtimestamp(p.get('modified', 0)).strftime('%Y-%m-%d %H:%M')
+    mark = '*' if p['id'] == d.get('current') else ' '
+    print('%-28s %-22s %s' % (mark + p['id'], p.get('name', p['id']), ts))
+"
+    ;;
+  remove|rm|delete)
+    id="${1:-}"
+    [[ -n $id ]] || { echo "Usage: omarchy canvas remove <id>" >&2; exit 1; }
+    omarchy-shell canvas remove "$id"
+    echo "Removed canvas: $id"
+    ;;
+  current)
+    omarchy-shell canvas current
+    ;;
+  *)
+    cat <<USAGE
+Usage: omarchy canvas <command> [args]
+
+  open [id]     Open a canvas (summon the editor)
+  new [name]    Create and open a new canvas
+  list          List canvases
+  remove <id>   Delete a canvas
+  current       Print the active canvas id
+
+Examples:
+  omarchy canvas open
+  omarchy canvas new "Product roadmap"
+USAGE
+    exit 1
+    ;;
+esac

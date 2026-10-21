@@ -1,0 +1,5 @@
+module lib
+
+CanvasDoc 1.0 CanvasDoc.qml
+CanvasItem 1.0 CanvasItem.qml
+CanvasObject 1.0 CanvasObject.qml
